@@ -1,0 +1,752 @@
+# E-Learning Platform Database Implementation
+
+## Part 1: Database Setup and Data Modeling
+
+from pymongo import MongoClient
+from datetime import datetime
+import pandas as pd
+import pprint
+
+# Establish connection
+client = MongoClient('mongodb://localhost:27017/')
+db = client['eduhub_db']
+
+# Create collections with validation rules
+try:
+    # Users collection with validation
+    db.create_collection('users', validator={
+        '$jsonSchema': {
+            'bsonType': 'object',
+            'required': ['userId', 'email', 'firstName', 'lastName', 'role', 'dateJoined'],
+            'properties': {
+                'userId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'email': {
+                    'bsonType': 'string',
+                    'pattern': '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$',
+                    'description': 'must be a valid email and is required'
+                },
+                'firstName': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'lastName': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'role': {
+                    'enum': ['student', 'instructor'],
+                    'description': 'must be either student or instructor'
+                },
+                'dateJoined': {
+                    'bsonType': 'date',
+                    'description': 'must be a date and is required'
+                },
+                'profile': {
+                    'bsonType': 'object',
+                    'properties': {
+                        'bio': {'bsonType': 'string'},
+                        'avatar': {'bsonType': 'string'},
+                        'skills': {
+                            'bsonType': 'array',
+                            'items': {'bsonType': 'string'}
+                        }
+                    }
+                },
+                'isActive': {
+                    'bsonType': 'bool',
+                    'description': 'must be a boolean'
+                }
+            }
+        }
+    })
+
+    # Courses collection with validation
+    db.create_collection('courses', validator={
+        '$jsonSchema': {
+            'bsonType': 'object',
+            'required': ['courseId', 'title', 'instructorId', 'createdAt'],
+            'properties': {
+                'courseId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'title': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'description': {
+                    'bsonType': 'string'
+                },
+                'instructorId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'category': {
+                    'bsonType': 'string'
+                },
+                'level': {
+                    'enum': ['beginner', 'intermediate', 'advanced'],
+                    'description': 'must be a valid difficulty level'
+                },
+                'duration': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'description': 'must be a positive number'
+                },
+                'price': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'description': 'must be a positive number'
+                },
+                'tags': {
+                    'bsonType': 'array',
+                    'items': {'bsonType': 'string'}
+                },
+                'createdAt': {
+                    'bsonType': 'date',
+                    'description': 'must be a date and is required'
+                },
+                'updatedAt': {
+                    'bsonType': 'date'
+                },
+                'isPublished': {
+                    'bsonType': 'bool'
+                }
+            }
+        }
+    })
+
+    # Enrollments collection with validation
+    db.create_collection('enrollments', validator={
+        '$jsonSchema': {
+            'bsonType': 'object',
+            'required': ['enrollmentId', 'studentId', 'courseId', 'enrollmentDate'],
+            'properties': {
+                'enrollmentId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'studentId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'courseId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'enrollmentDate': {
+                    'bsonType': 'date',
+                    'description': 'must be a date and is required'
+                },
+                'completionStatus': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'maximum': 100,
+                    'description': 'must be a number between 0 and 100'
+                },
+                'lastAccessed': {
+                    'bsonType': 'date'
+                }
+            }
+        }
+    })
+
+    # Lessons collection with validation
+    db.create_collection('lessons', validator={
+        '$jsonSchema': {
+            'bsonType': 'object',
+            'required': ['lessonId', 'courseId', 'title', 'sequence'],
+            'properties': {
+                'lessonId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'courseId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'title': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'content': {
+                    'bsonType': 'string'
+                },
+                'sequence': {
+                    'bsonType': 'number',
+                    'minimum': 1,
+                    'description': 'must be a positive integer'
+                },
+                'duration': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'description': 'must be a positive number'
+                },
+                'resources': {
+                    'bsonType': 'array',
+                    'items': {
+                        'bsonType': 'object',
+                        'properties': {
+                            'type': {'bsonType': 'string'},
+                            'url': {'bsonType': 'string'}
+                        }
+                    }
+                }
+            }
+        }
+    })
+
+    # Assignments collection with validation
+    db.create_collection('assignments', validator={
+        '$jsonSchema': {
+            'bsonType': 'object',
+            'required': ['assignmentId', 'courseId', 'title', 'dueDate'],
+            'properties': {
+                'assignmentId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'courseId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'title': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'description': {
+                    'bsonType': 'string'
+                },
+                'dueDate': {
+                    'bsonType': 'date',
+                    'description': 'must be a date and is required'
+                },
+                'maxPoints': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'description': 'must be a positive number'
+                },
+                'weight': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'maximum': 1,
+                    'description': 'must be a number between 0 and 1'
+                }
+            }
+        }
+    })
+
+    # Submissions collection with validation
+    db.create_collection('submissions', validator={
+        '$jsonSchema': {
+            'bsonType': 'object',
+            'required': ['submissionId', 'assignmentId', 'studentId', 'submissionDate'],
+            'properties': {
+                'submissionId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'assignmentId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'studentId': {
+                    'bsonType': 'string',
+                    'description': 'must be a string and is required'
+                },
+                'submissionDate': {
+                    'bsonType': 'date',
+                    'description': 'must be a date and is required'
+                },
+                'content': {
+                    'bsonType': 'string'
+                },
+                'grade': {
+                    'bsonType': 'number',
+                    'minimum': 0,
+                    'description': 'must be a positive number'
+                },
+                'feedback': {
+                    'bsonType': 'string'
+                },
+                'isGraded': {
+                    'bsonType': 'bool'
+                }
+            }
+        }
+    })
+
+    print("Collections created successfully with validation rules.")
+except Exception as e:
+    print(f"Error creating collections: {e}")
+```
+
+## Part 2: Data Population
+
+Now let's insert sample data into our collections.
+
+```python
+# Insert sample users
+users_data = [
+    {
+        "userId": "user1",
+        "email": "john.doe@example.com",
+        "firstName": "John",
+        "lastName": "Doe",
+        "role": "student",
+        "dateJoined": datetime(2023, 1, 15),
+        "profile": {
+            "bio": "Computer science student",
+            "skills": ["Python", "Java"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user2",
+        "email": "jane.smith@example.com",
+        "firstName": "Jane",
+        "lastName": "Smith",
+        "role": "student",
+        "dateJoined": datetime(2023, 2, 20),
+        "profile": {
+            "bio": "Data science enthusiast",
+            "skills": ["Python", "R", "SQL"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user3",
+        "email": "prof.johnson@example.com",
+        "firstName": "Robert",
+        "lastName": "Johnson",
+        "role": "instructor",
+        "dateJoined": datetime(2023, 1, 5),
+        "profile": {
+            "bio": "Senior software engineer with 10 years of experience",
+            "skills": ["Python", "JavaScript", "Docker", "Kubernetes"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user4",
+        "email": "dr.williams@example.com",
+        "firstName": "Sarah",
+        "lastName": "Williams",
+        "role": "instructor",
+        "dateJoined": datetime(2023, 1, 10),
+        "profile": {
+            "bio": "PhD in Data Science",
+            "skills": ["Machine Learning", "Statistics", "Python"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user5",
+        "email": "mike.brown@example.com",
+        "firstName": "Michael",
+        "lastName": "Brown",
+        "role": "student",
+        "dateJoined": datetime(2023, 3, 1),
+        "profile": {
+            "bio": "Web development beginner",
+            "skills": ["HTML", "CSS"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user6",
+        "email": "emily.davis@example.com",
+        "firstName": "Emily",
+        "lastName": "Davis",
+        "role": "student",
+        "dateJoined": datetime(2023, 3, 15),
+        "profile": {
+            "bio": "Aspiring data analyst",
+            "skills": ["Excel", "SQL"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user7",
+        "email": "prof.miller@example.com",
+        "firstName": "David",
+        "lastName": "Miller",
+        "role": "instructor",
+        "dateJoined": datetime(2023, 2, 1),
+        "profile": {
+            "bio": "Cybersecurity expert",
+            "skills": ["Network Security", "Ethical Hacking", "Cryptography"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user8",
+        "email": "alex.wilson@example.com",
+        "firstName": "Alex",
+        "lastName": "Wilson",
+        "role": "student",
+        "dateJoined": datetime(2023, 4, 10),
+        "profile": {
+            "bio": "Mobile app developer",
+            "skills": ["Flutter", "Dart", "Firebase"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user9",
+        "email": "sophia.moore@example.com",
+        "firstName": "Sophia",
+        "lastName": "Moore",
+        "role": "student",
+        "dateJoined": datetime(2023, 4, 15),
+        "profile": {
+            "bio": "UI/UX designer learning to code",
+            "skills": ["Figma", "Adobe XD", "JavaScript"]
+        },
+        "isActive": True
+    },
+    {
+        "userId": "user10",
+        "email": "dr.taylor@example.com",
+        "firstName": "James",
+        "lastName": "Taylor",
+        "role": "instructor",
+        "dateJoined": datetime(2023, 2, 15),
+        "profile": {
+            "bio": "Database systems professor",
+            "skills": ["SQL", "NoSQL", "Database Design"]
+        },
+        "isActive": True
+    }
+]
+
+try:
+    db.users.insert_many(users_data)
+    print("Inserted 10 users successfully.")
+except Exception as e:
+    print(f"Error inserting users: {e}")
+
+# Insert sample courses
+courses_data = [
+    {
+        "courseId": "course1",
+        "title": "Python Programming Fundamentals",
+        "description": "Learn Python from scratch",
+        "instructorId": "user3",
+        "category": "Programming",
+        "level": "beginner",
+        "duration": 20,
+        "price": 99.99,
+        "tags": ["python", "programming", "beginner"],
+        "createdAt": datetime(2023, 1, 20),
+        "updatedAt": datetime(2023, 2, 1),
+        "isPublished": True
+    },
+    {
+        "courseId": "course2",
+        "title": "Advanced Data Science with Python",
+        "description": "Master data science techniques",
+        "instructorId": "user4",
+        "category": "Data Science",
+        "level": "advanced",
+        "duration": 40,
+        "price": 199.99,
+        "tags": ["python", "data science", "machine learning"],
+        "createdAt": datetime(2023, 1, 25),
+        "updatedAt": datetime(2023, 3, 15),
+        "isPublished": True
+    },
+    {
+        "courseId": "course3",
+        "title": "Web Development Bootcamp",
+        "description": "Full stack web development course",
+        "instructorId": "user3",
+        "category": "Web Development",
+        "level": "intermediate",
+        "duration": 60,
+        "price": 149.99,
+        "tags": ["html", "css", "javascript", "react"],
+        "createdAt": datetime(2023, 2, 10),
+        "updatedAt": datetime(2023, 4, 1),
+        "isPublished": True
+    },
+    {
+        "courseId": "course4",
+        "title": "Introduction to Cybersecurity",
+        "description": "Learn the basics of cybersecurity",
+        "instructorId": "user7",
+        "category": "Security",
+        "level": "beginner",
+        "duration": 30,
+        "price": 129.99,
+        "tags": ["security", "networking", "ethical hacking"],
+        "createdAt": datetime(2023, 2, 15),
+        "updatedAt": datetime(2023, 3, 1),
+        "isPublished": True
+    },
+    {
+        "courseId": "course5",
+        "title": "Database Systems for Developers",
+        "description": "Learn SQL and NoSQL databases",
+        "instructorId": "user10",
+        "category": "Databases",
+        "level": "intermediate",
+        "duration": 35,
+        "price": 159.99,
+        "tags": ["sql", "mongodb", "database design"],
+        "createdAt": datetime(2023, 3, 1),
+        "updatedAt": datetime(2023, 4, 10),
+        "isPublished": True
+    },
+    {
+        "courseId": "course6",
+        "title": "Machine Learning Fundamentals",
+        "description": "Introduction to ML algorithms",
+        "instructorId": "user4",
+        "category": "Data Science",
+        "level": "intermediate",
+        "duration": 45,
+        "price": 179.99,
+        "tags": ["machine learning", "python", "scikit-learn"],
+        "createdAt": datetime(2023, 3, 10),
+        "updatedAt": datetime(2023, 4, 5),
+        "isPublished": True
+    },
+    {
+        "courseId": "course7",
+        "title": "Mobile App Development with Flutter",
+        "description": "Build cross-platform mobile apps",
+        "instructorId": "user3",
+        "category": "Mobile Development",
+        "level": "intermediate",
+        "duration": 50,
+        "price": 169.99,
+        "tags": ["flutter", "dart", "mobile"],
+        "createdAt": datetime(2023, 3, 20),
+        "updatedAt": datetime(2023, 4, 15),
+        "isPublished": True
+    },
+    {
+        "courseId": "course8",
+        "title": "UI/UX Design Principles",
+        "description": "Learn design best practices",
+        "instructorId": "user10",
+        "category": "Design",
+        "level": "beginner",
+        "duration": 25,
+        "price": 119.99,
+        "tags": ["design", "ui", "ux", "figma"],
+        "createdAt": datetime(2023, 4, 1),
+        "updatedAt": datetime(2023, 4, 20),
+        "isPublished": True
+    }
+]
+
+try:
+    db.courses.insert_many(courses_data)
+    print("Inserted 8 courses successfully.")
+except Exception as e:
+    print(f"Error inserting courses: {e}")
+
+# Insert sample enrollments
+enrollments_data = [
+    {"enrollmentId": "enroll1", "studentId": "user1", "courseId": "course1", 
+     "enrollmentDate": datetime(2023, 1, 25), "completionStatus": 75, 
+     "lastAccessed": datetime(2023, 4, 18)},
+    {"enrollmentId": "enroll2", "studentId": "user1", "courseId": "course3", 
+     "enrollmentDate": datetime(2023, 2, 15), "completionStatus": 30, 
+     "lastAccessed": datetime(2023, 4, 15)},
+    {"enrollmentId": "enroll3", "studentId": "user2", "courseId": "course2", 
+     "enrollmentDate": datetime(2023, 2, 1), "completionStatus": 90, 
+     "lastAccessed": datetime(2023, 4, 17)},
+    {"enrollmentId": "enroll4", "studentId": "user2", "courseId": "course6", 
+     "enrollmentDate": datetime(2023, 3, 15), "completionStatus": 50, 
+     "lastAccessed": datetime(2023, 4, 16)},
+    {"enrollmentId": "enroll5", "studentId": "user5", "courseId": "course3", 
+     "enrollmentDate": datetime(2023, 3, 5), "completionStatus": 20, 
+     "lastAccessed": datetime(2023, 4, 10)},
+    {"enrollmentId": "enroll6", "studentId": "user5", "courseId": "course8", 
+     "enrollmentDate": datetime(2023, 4, 5), "completionStatus": 10, 
+     "lastAccessed": datetime(2023, 4, 12)},
+    {"enrollmentId": "enroll7", "studentId": "user6", "courseId": "course2", 
+     "enrollmentDate": datetime(2023, 3, 20), "completionStatus": 60, 
+     "lastAccessed": datetime(2023, 4, 17)},
+    {"enrollmentId": "enroll8", "studentId": "user6", "courseId": "course5", 
+     "enrollmentDate": datetime(2023, 4, 1), "completionStatus": 15, 
+     "lastAccessed": datetime(2023, 4, 15)},
+    {"enrollmentId": "enroll9", "studentId": "user8", "courseId": "course7", 
+     "enrollmentDate": datetime(2023, 4, 12), "completionStatus": 5, 
+     "lastAccessed": datetime(2023, 4, 18)},
+    {"enrollmentId": "enroll10", "studentId": "user8", "courseId": "course1", 
+     "enrollmentDate": datetime(2023, 4, 5), "completionStatus": 25, 
+     "lastAccessed": datetime(2023, 4, 16)},
+    {"enrollmentId": "enroll11", "studentId": "user9", "courseId": "course8", 
+     "enrollmentDate": datetime(2023, 4, 18), "completionStatus": 0, 
+     "lastAccessed": datetime(2023, 4, 18)},
+    {"enrollmentId": "enroll12", "studentId": "user9", "courseId": "course3", 
+     "enrollmentDate": datetime(2023, 4, 10), "completionStatus": 10, 
+     "lastAccessed": datetime(2023, 4, 15)},
+    {"enrollmentId": "enroll13", "studentId": "user1", "courseId": "course5", 
+     "enrollmentDate": datetime(2023, 3, 20), "completionStatus": 40, 
+     "lastAccessed": datetime(2023, 4, 14)},
+    {"enrollmentId": "enroll14", "studentId": "user2", "courseId": "course4", 
+     "enrollmentDate": datetime(2023, 3, 1), "completionStatus": 80, 
+     "lastAccessed": datetime(2023, 4, 16)},
+    {"enrollmentId": "enroll15", "studentId": "user6", "courseId": "course1", 
+     "enrollmentDate": datetime(2023, 4, 5), "completionStatus": 30, 
+     "lastAccessed": datetime(2023, 4, 17)}
+]
+
+try:
+    db.enrollments.insert_many(enrollments_data)
+    print("Inserted 15 enrollments successfully.")
+except Exception as e:
+    print(f"Error inserting enrollments: {e}")
+
+# Insert sample lessons
+lessons_data = [
+    {"lessonId": "lesson1", "courseId": "course1", "title": "Introduction to Python", 
+     "content": "Python basics and syntax", "sequence": 1, "duration": 2,
+     "resources": [{"type": "video", "url": "https://example.com/video1"}]},
+    {"lessonId": "lesson2", "courseId": "course1", "title": "Python Data Types", 
+     "content": "Strings, numbers, lists, etc.", "sequence": 2, "duration": 3,
+     "resources": [{"type": "video", "url": "https://example.com/video2"}]},
+    {"lessonId": "lesson3", "courseId": "course1", "title": "Control Flow", 
+     "content": "If statements and loops", "sequence": 3, "duration": 3,
+     "resources": [{"type": "video", "url": "https://example.com/video3"}]},
+    {"lessonId": "lesson4", "courseId": "course1", "title": "Functions", 
+     "content": "Defining and using functions", "sequence": 4, "duration": 3,
+     "resources": [{"type": "video", "url": "https://example.com/video4"}]},
+    {"lessonId": "lesson5", "courseId": "course1", "title": "File Handling", 
+     "content": "Reading and writing files", "sequence": 5, "duration": 2,
+     "resources": [{"type": "video", "url": "https://example.com/video5"}]},
+    
+    {"lessonId": "lesson6", "courseId": "course2", "title": "Data Science Overview", 
+     "content": "Introduction to data science", "sequence": 1, "duration": 4},
+    {"lessonId": "lesson7", "courseId": "course2", "title": "Pandas Fundamentals", 
+     "content": "Data manipulation with pandas", "sequence": 2, "duration": 5},
+    {"lessonId": "lesson8", "courseId": "course2", "title": "Data Visualization", 
+     "content": "Matplotlib and Seaborn", "sequence": 3, "duration": 5},
+    {"lessonId": "lesson9", "courseId": "course2", "title": "Machine Learning Intro", 
+     "content": "Supervised learning basics", "sequence": 4, "duration": 6},
+    
+    {"lessonId": "lesson10", "courseId": "course3", "title": "HTML Basics", 
+     "content": "HTML structure and tags", "sequence": 1, "duration": 3},
+    {"lessonId": "lesson11", "courseId": "course3", "title": "CSS Styling", 
+     "content": "CSS selectors and properties", "sequence": 2, "duration": 4},
+    {"lessonId": "lesson12", "courseId": "course3", "title": "JavaScript Fundamentals", 
+     "content": "JS syntax and DOM manipulation", "sequence": 3, "duration": 5},
+    {"lessonId": "lesson13", "courseId": "course3", "title": "React Introduction", 
+     "content": "React components and state", "sequence": 4, "duration": 6},
+    
+    {"lessonId": "lesson14", "courseId": "course4", "title": "Security Concepts", 
+     "content": "Basic security principles", "sequence": 1, "duration": 3},
+    {"lessonId": "lesson15", "courseId": "course4", "title": "Network Security", 
+     "content": "Firewalls and encryption", "sequence": 2, "duration": 4},
+    {"lessonId": "lesson16", "courseId": "course4", "title": "Ethical Hacking", 
+     "content": "Penetration testing basics", "sequence": 3, "duration": 5},
+    
+    {"lessonId": "lesson17", "courseId": "course5", "title": "SQL Basics", 
+     "content": "SELECT, INSERT, UPDATE, DELETE", "sequence": 1, "duration": 4},
+    {"lessonId": "lesson18", "courseId": "course5", "title": "Database Design", 
+     "content": "Normalization and relationships", "sequence": 2, "duration": 5},
+    {"lessonId": "lesson19", "courseId": "course5", "title": "NoSQL Databases", 
+     "content": "MongoDB and document stores", "sequence": 3, "duration": 5},
+    
+    {"lessonId": "lesson20", "courseId": "course6", "title": "ML Algorithms", 
+     "content": "Regression and classification", "sequence": 1, "duration": 6},
+    {"lessonId": "lesson21", "courseId": "course6", "title": "Model Evaluation", 
+     "content": "Metrics and validation", "sequence": 2, "duration": 5},
+    
+    {"lessonId": "lesson22", "courseId": "course7", "title": "Flutter Setup", 
+     "content": "Installation and first app", "sequence": 1, "duration": 3},
+    {"lessonId": "lesson23", "courseId": "course7", "title": "Widgets", 
+     "content": "Building UI with widgets", "sequence": 2, "duration": 4},
+    {"lessonId": "lesson24", "courseId": "course7", "title": "State Management", 
+     "content": "Managing app state", "sequence": 3, "duration": 5},
+    
+    {"lessonId": "lesson25", "courseId": "course8", "title": "Design Principles", 
+     "content": "Color, typography, layout", "sequence": 1, "duration": 4}
+]
+
+try:
+    db.lessons.insert_many(lessons_data)
+    print("Inserted 25 lessons successfully.")
+except Exception as e:
+    print(f"Error inserting lessons: {e}")
+
+# Insert sample assignments
+assignments_data = [
+    {"assignmentId": "assign1", "courseId": "course1", "title": "Python Basics Exercise", 
+     "description": "Complete the coding exercises", "dueDate": datetime(2023, 5, 1), 
+     "maxPoints": 100, "weight": 0.2},
+    {"assignmentId": "assign2", "courseId": "course1", "title": "Function Implementation", 
+     "description": "Write functions to solve problems", "dueDate": datetime(2023, 5, 15), 
+     "maxPoints": 100, "weight": 0.3},
+    {"assignmentId": "assign3", "courseId": "course2", "title": "Data Analysis Project", 
+     "description": "Analyze a dataset and report findings", "dueDate": datetime(2023, 5, 10), 
+     "maxPoints": 150, "weight": 0.4},
+    {"assignmentId": "assign4", "courseId": "course2", "title": "ML Model Implementation", 
+     "description": "Build and evaluate a model", "dueDate": datetime(2023, 6, 1), 
+     "maxPoints": 200, "weight": 0.5},
+    {"assignmentId": "assign5", "courseId": "course3", "title": "HTML/CSS Website", 
+     "description": "Build a responsive website", "dueDate": datetime(2023, 5, 20), 
+     "maxPoints": 150, "weight": 0.3},
+    {"assignmentId": "assign6", "courseId": "course3", "title": "React Application", 
+     "description": "Create a React app with API calls", "dueDate": datetime(2023, 6, 10), 
+     "maxPoints": 200, "weight": 0.4},
+    {"assignmentId": "assign7", "courseId": "course4", "title": "Security Analysis", 
+     "description": "Analyze security vulnerabilities", "dueDate": datetime(2023, 5, 25), 
+     "maxPoints": 120, "weight": 0.3},
+    {"assignmentId": "assign8", "courseId": "course5", "title": "Database Design", 
+     "description": "Design a database schema", "dueDate": datetime(2023, 5, 30), 
+     "maxPoints": 150, "weight": 0.4},
+    {"assignmentId": "assign9", "courseId": "course6", "title": "ML Project", 
+     "description": "Complete an end-to-end ML project", "dueDate": datetime(2023, 6, 15), 
+     "maxPoints": 250, "weight": 0.6},
+    {"assignmentId": "assign10", "courseId": "course8", "title": "UI Design Project", 
+     "description": "Design a mobile app interface", "dueDate": datetime(2023, 5, 18), 
+     "maxPoints": 100, "weight": 0.3}
+]
+
+try:
+    db.assignments.insert_many(assignments_data)
+    print("Inserted 10 assignments successfully.")
+except Exception as e:
+    print(f"Error inserting assignments: {e}")
+
+# Insert sample submissions
+submissions_data = [
+    {"submissionId": "sub1", "assignmentId": "assign1", "studentId": "user1", 
+     "submissionDate": datetime(2023, 4, 28), "content": "Python code solution", 
+     "grade": 85, "feedback": "Good work, but needs more comments", "isGraded": True},
+    {"submissionId": "sub2", "assignmentId": "assign1", "studentId": "user8", 
+     "submissionDate": datetime(2023, 4, 30), "content": "Python exercises", 
+     "grade": 78, "feedback": "Some errors in the solutions", "isGraded": True},
+    {"submissionId": "sub3", "assignmentId": "assign1", "studentId": "user6", 
+     "submissionDate": datetime(2023, 5, 1), "content": "Python basics assignment", 
+     "grade": 92, "feedback": "Excellent work!", "isGraded": True},
+    {"submissionId": "sub4", "assignmentId": "assign3", "studentId": "user2", 
+     "submissionDate": datetime(2023, 5, 8), "content": "Data analysis report", 
+     "grade": 88, "feedback": "Thorough analysis, good visualizations", "isGraded": True},
+    {"submissionId": "sub5", "assignmentId": "assign3", "studentId": "user6", 
+     "submissionDate": datetime(2023, 5, 9), "content": "Data science project", 
+     "grade": 95, "feedback": "Very insightful findings", "isGraded": True},
+    {"submissionId": "sub6", "assignmentId": "assign5", "studentId": "user5", 
+     "submissionDate": datetime(2023, 5, 18), "content": "Website files", 
+     "grade": 75, "feedback": "Needs better responsive design", "isGraded": True},
+    {"submissionId": "sub7", "assignmentId": "assign5", "studentId": "user9", 
+     "submissionDate": datetime(2023, 5, 19), "content": "Web project", 
+     "grade": 82, "feedback": "Good design, but some broken links", "isGraded": True},
+    {"submissionId": "sub8", "assignmentId": "assign7", "studentId": "user2", 
+     "submissionDate": datetime(2023, 5, 24), "content": "Security report", 
+     "grade": 90, "feedback": "Comprehensive analysis", "isGraded": True},
+    {"submissionId": "sub9", "assignmentId": "assign10", "studentId": "user5", 
+     "submissionDate": datetime(2023, 5, 16), "content": "UI design files", 
+     "grade": 85, "feedback": "Creative design, good color choices", "isGraded": True},
+    {"submissionId": "sub10", "assignmentId": "assign10", "studentId": "user9", 
+     "submissionDate": datetime(2023, 5, 17), "content": "App design", 
+     "grade
